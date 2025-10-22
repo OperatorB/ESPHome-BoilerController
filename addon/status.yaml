@@ -1,0 +1,39 @@
+binary_sensor:
+  - platform: status
+    name: "Online"
+    id: ink_ha_connected
+    icon: "mdi:check-network"
+
+sensor:
+  - platform: uptime
+    name: "Uptime"
+    id: uptime_sensor
+    entity_category: diagnostic
+
+  - platform: wifi_signal
+    name: "Wifi dBm"
+    id: wifi_signal_dbm
+    update_interval: 60s
+    entity_category: "diagnostic"
+    internal: true
+
+  - platform: copy
+    source_id: wifi_signal_dbm
+    name: "Wifi"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+    icon: "mdi:wifi"
+    entity_category: "diagnostic"
+    device_class: ""
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+      icon: "mdi:ip-network"
+
+  - platform: version
+    name: Version
+    icon: "mdi:package-variant-closed"
+    hide_timestamp: true

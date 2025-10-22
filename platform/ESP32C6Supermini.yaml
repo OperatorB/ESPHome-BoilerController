@@ -1,0 +1,58 @@
+esphome:
+  name: ${Proj_name}
+  friendly_name: ${Proj_friendly_name}
+  platformio_options:
+    build_flags: "-DI2C_NUM_1=I2C_NUM_0"
+  project:
+    name: "${Proj_owner}.${Proj_name}"
+    version: ${Proj_version}
+  min_version: 2025.9.0
+  name_add_mac_suffix: false
+  on_boot:
+    - priority: 600.0
+      then:
+        - light.turn_off: esp32c6_supermini_led
+    - priority: -100.0
+      then:
+        - ds1307.read_time:
+            id: time_rtc
+        - delay: 1s
+        - lambda: |-
+            auto rtc_now = id(time_rtc).now();
+            auto ha_now = id(time_ha).now();
+            if ((rtc_now.is_valid()) && (!ha_now.is_valid())) {
+              ESP_LOGE("MY_ON_BOOT", "❌ RTC and HA time invalid, check connections! ⌚🛜 Rebooting in 120sec..");
+              id(script_led_red_pulse).execute();
+              id(script_time_failure_reboot).execute();
+            } else if ((rtc_now.timestamp < 1600000000) && (ha_now.timestamp < 1600000000)) {
+              ESP_LOGE("MY_ON_BOOT", "❌ RTC and HA time is too old, likely reset! 🪫 Rebooting in 120sec..");
+              id(script_led_red_pulse).execute();
+              id(script_time_failure_reboot).execute();
+            } else {
+              ESP_LOGI("MY_ON_BOOT", "✅ RTC time: %s  HA time: %s",rtc_now.strftime("%Y-%m-%d %H:%M:%S").c_str(), ha_now.strftime("%Y-%m-%d %H:%M:%S").c_str());
+              id(switch_auto_mode_heating).turn_on();
+              id(script_led_green).execute();
+            }
+
+esp32:
+  board: esp32-c6-devkitm-1
+  variant: esp32c6
+  framework:
+    type: esp-idf
+
+i2c:
+  id: iic_bus_1
+  sda: GPIO6
+  scl: GPIO7
+  scan: false
+
+substitutions:
+  pin_relay_1: GPIO4
+  pin_relay_2: GPIO3
+  pin_relay_3: GPIO14
+  pin_relay_4: GPIO15
+  pin_relay_5: GPIO0
+  pin_relay_6: GPIO17
+  pin_relay_7: GPIO16
+  pin_button_1: GPIO18
+  pin_button_2: GPIO19

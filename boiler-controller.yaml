@@ -1,0 +1,560 @@
+substitutions:
+  Proj_name: "boiler-controller"
+  Proj_friendly_name: "Boiler Controller"
+  Proj_version: "2025.10.0"
+  Proj_owner: "OperatorB"
+  Proj_timezone: "Europe/Budapest"
+  API_key: ""
+  OTA_password: ""
+  WiFi_password: ""
+  
+# Water Tank Schedule
+  water_tank_on_time_hour: "*"
+  water_tank_on_time_minute: "*"
+  water_tank_on_time_second: "0"
+  water_tank_on_days_of_week: "MON-SUN"
+  water_tank_off_time_hour: "*"
+  water_tank_off_time_minute: "*"
+  water_tank_off_time_second: "30"
+  water_tank_off_days_of_week: "MON-SUN"
+
+packages:
+  remote_package_files:
+    url: https://github.com/OperatorB/ESPHome-BoilerController.git
+    ref: main
+    files: [platform/ESP32C6Supermini.yaml,
+            addon/status.yaml,
+            addon/ESP32C6SuperminiLed.yaml]
+    refresh: 1sec
+
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Boiler Controller Fallback AP"
+    password: ${WiFi_password}
+  reboot_timeout: 24h
+
+api:
+  encryption:
+    key: ${API_key}
+  reboot_timeout: 48h
+  on_client_connected:
+    - delay: 2s
+    - lambda: |-
+        if (!id(time_ha).now().is_valid()) {
+          id(time_ha)->update();
+          ESP_LOGI("MY_API", "✅ API connected and Time synced successfully from HA.");
+          id(time_rtc).write_time();
+        }
+
+logger:
+  baud_rate: 0
+
+ota:
+  - platform: esphome
+    password: ${OTA_password}
+
+captive_portal:
+
+web_server:
+
+time:
+  - platform: ds1307
+    id: time_rtc
+    timezone: ${Proj_timezone}
+    update_interval: never
+    on_time:
+      - days_of_week: ${water_tank_on_days_of_week}
+        hours: ${water_tank_on_time_hour}
+        minutes: ${water_tank_on_time_minute}
+        seconds: ${water_tank_on_time_second}
+        then:
+          - if:
+              condition:
+                and:
+                  - binary_sensor.is_on: binary_time_ok
+                  - switch.is_on: switch_auto_mode_heating
+              then:
+                - switch.turn_on: switch_water_tank_heating        
+      - days_of_week: ${water_tank_off_days_of_week}
+        hours: ${water_tank_off_time_hour}
+        minutes: ${water_tank_off_time_minute}
+        seconds: ${water_tank_off_time_second}
+        then:
+          - if:
+              condition:
+                - switch.is_on: switch_water_tank_heating
+              then:
+                - switch.turn_off: switch_water_tank_heating
+
+  - platform: homeassistant
+    id: time_ha
+    timezone: "Europe/Budapest"
+    update_interval:
+      hours: 24
+    on_time_sync:
+      then:
+        - lambda: |-
+            ESP_LOGI("MY_TIME", "✅ Time was synced successfully from HA. Writing to RTC..");
+        - ds1307.write_time:
+            id: time_rtc
+        - if:
+            condition:
+              - script.is_running: script_time_failure_reboot
+            then:
+              - script.stop: script_time_failure_reboot
+              - lambda: |-
+                  ESP_LOGI("MY_TIME", "✅ Reboot script stopped.");
+              - delay: 1s
+              - switch.turn_on: switch_auto_mode_heating
+
+switch:
+  - platform: gpio
+    pin: ${pin_relay_1}
+    name: "Relay #1"
+    id: switch_relay_1
+    icon: "mdi:numeric-1-circle-outline"
+
+  - platform: gpio
+    pin: ${pin_relay_2}
+    name: "Relay #2"
+    id: switch_relay_2
+    icon: "mdi:numeric-2-circle-outline"
+
+  - platform: gpio
+    pin: ${pin_relay_3}
+    name: "Relay #3"
+    id: switch_relay_3
+    icon: "mdi:numeric-3-circle-outline"
+
+  - platform: gpio
+    pin: ${pin_relay_4}
+    name: "Relay #4"
+    id: switch_relay_4
+    icon: "mdi:numeric-4-circle-outline"
+
+  - platform: gpio
+    pin: ${pin_relay_5}
+    name: "Relay #5"
+    id: switch_relay_5
+    icon: "mdi:numeric-5-circle-outline"
+
+  - platform: gpio
+    pin: ${pin_relay_6}
+    name: "Relay #6"
+    id: switch_relay_6
+    icon: "mdi:numeric-6-circle-outline"
+
+  - platform: gpio
+    pin: ${pin_relay_7}
+    name: "Relay #7"
+    id: switch_relay_7
+    icon: "mdi:numeric-7-circle-outline"
+
+  - platform: template
+    name: "Auto mode"
+    id: switch_auto_mode_heating
+    icon: "mdi:sync-circle"
+    optimistic: true
+    restore_mode: DISABLED
+    on_turn_on:
+      - script.execute: script_turn_on_auto_mode
+    on_turn_off:
+      - script.execute: script_turn_off_auto_mode
+
+  - platform: template
+    name: "Water tank heating"
+    id: switch_water_tank_heating
+    icon: "mdi:database"
+    optimistic: true
+    restore_mode: DISABLED
+    on_turn_on:
+        - script.execute: script_turn_on_water_tank_heating
+    on_turn_off:
+        - script.execute: script_turn_off_water_tank_heating
+
+  - platform: template
+    name: "Radiator heating"
+    id: switch_radiator_heating
+    icon: "mdi:radiator"
+    optimistic: true
+    restore_mode: DISABLED
+    on_turn_on:
+        - script.execute: script_turn_on_radiator_heating
+    on_turn_off:
+        - script.execute: script_turn_off_radiator_heating
+
+  - platform: template
+    name: "Floor heating"
+    id: switch_floor_heating
+    icon: "mdi:heating-coil"
+    optimistic: true
+    restore_mode: DISABLED
+    on_turn_on:
+        - script.execute: script_turn_on_floor_heating
+    on_turn_off:
+        - script.execute: script_turn_off_floor_heating
+
+button:
+  - platform: template
+    name: "Digital Button1"
+    id: button_virtual_1
+    icon: "mdi:alpha-a-circle-outline"
+    on_press:
+      then:
+        - if:
+            condition:
+              - script.is_running: script_time_failure_reboot
+            then:
+              - button.press: button_boiler_controller_restart
+            else:
+              - switch.toggle: switch_radiator_heating
+
+  - platform: template
+    name: "Digital Button2"
+    id: button_virtual_2
+    icon: "mdi:alpha-b-circle-outline"
+    on_press:
+      then:
+        - if:
+            condition:
+              - script.is_running: script_time_failure_reboot
+            then:
+              - button.press: button_boiler_controller_restart
+            else:
+              - switch.toggle: switch_radiator_heating
+
+  - platform: restart
+    name: "Boiler controller restart"
+    id: button_boiler_controller_restart
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: ${pin_button_1}
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    name: "Push Button1"
+    id: binary_push_button_1
+    filters:
+      - delayed_on: 10ms
+    on_multi_click:
+      - timing:
+          - ON for at most 1s
+          - OFF for at most 1s
+          - ON for at most 1s
+          - OFF for at least 0.2s
+        then:
+          - logger.log: "Double Clicked 1"
+      - timing:
+          - ON for 1s to 2s
+          - OFF for at least 0.5s
+        then:
+          - logger.log: "Long Clicked 1"
+          - switch.toggle: switch_auto_mode_heating
+      - timing:
+          - ON for at most 0.9s
+          - OFF for at least 0.1s
+        then:
+          - logger.log: "Short Clicked 1"
+          - if:
+              condition:
+                - script.is_running: script_time_failure_reboot
+              then:
+                - button.press: button_boiler_controller_restart
+              else:
+                - switch.toggle: switch_radiator_heating
+
+  - platform: gpio
+    pin:
+      number: ${pin_button_2}
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    name: "Push Button2"
+    id: binary_push_button_2
+    filters:
+      - delayed_on: 10ms
+    on_multi_click:
+      - timing:
+          - ON for at most 1s
+          - OFF for at most 1s
+          - ON for at most 1s
+          - OFF for at least 0.2s
+        then:
+          - logger.log: "Double Clicked 2"
+      - timing:
+          - ON for 1s to 2s
+          - OFF for at least 0.5s
+        then:
+          - logger.log: "Long Clicked 2"
+          - switch.toggle: switch_auto_mode_heating
+      - timing:
+          - ON for at most 0.9s
+          - OFF for at least 0.1s
+        then:
+          - logger.log: "Short Clicked 2"
+          - if:
+              condition:
+                - script.is_running: script_time_failure_reboot
+              then:
+                - button.press: button_boiler_controller_restart
+              else:
+              - switch.toggle: switch_floor_heating
+
+  - platform: template
+    name: "Time OK"
+    id: binary_time_ok
+    lambda: |-
+      return id(time_rtc).now().timestamp > 1600000000;
+
+script:
+  - id: script_relay_on_sweep
+    then:
+      - switch.turn_on: switch_relay_1
+      - delay: 1s
+      - switch.turn_on: switch_relay_2
+      - delay: 1s
+      - switch.turn_on: switch_relay_3
+      - delay: 1s
+      - switch.turn_on: switch_relay_4
+      - delay: 1s
+      - switch.turn_on: switch_relay_5
+      - delay: 1s
+      - switch.turn_on: switch_relay_6
+      - delay: 1s
+      - switch.turn_on: switch_relay_7
+
+  - id: script_relay_off_sweep
+    then:
+      - switch.turn_off: switch_relay_1
+      - delay: 1s
+      - switch.turn_off: switch_relay_2
+      - delay: 1s
+      - switch.turn_off: switch_relay_3
+      - delay: 1s
+      - switch.turn_off: switch_relay_4
+      - delay: 1s
+      - switch.turn_off: switch_relay_5
+      - delay: 1s
+      - switch.turn_off: switch_relay_6
+      - delay: 1s
+      - switch.turn_off: switch_relay_7
+
+  - id: script_turn_on_auto_mode
+    then:
+      - if:
+          condition:
+            - binary_sensor.is_on: binary_time_ok
+          then:
+            - if:
+                condition:
+                  - switch.is_on: switch_floor_heating
+                then:
+                    - script.execute: script_led_floor_auto_on_strobe
+                else:
+                  - if:
+                      condition:
+                        - switch.is_on: switch_radiator_heating
+                      then:
+                          - script.execute: script_led_radiator_auto_on_strobe
+                      else:
+                        - script.execute: script_led_green
+          else:
+            - delay: 400ms
+            - switch.turn_off: switch_auto_mode_heating
+
+  - id: script_turn_off_auto_mode
+    then:
+      - if:
+          condition:
+            - binary_sensor.is_on: binary_time_ok
+          then:
+            - if:
+                condition:
+                  - switch.is_on: switch_floor_heating
+                then:
+                    - script.execute: script_led_floor_auto_off_strobe
+                else:
+                  - if:
+                      condition:
+                        - switch.is_on: switch_radiator_heating
+                      then:
+                          - script.execute: script_led_radiator_auto_off_strobe
+                      else:
+                        - script.execute: script_led_magenta
+
+  - id: script_turn_on_water_tank_heating
+    then:
+      - if:
+          condition:
+            any:
+              - switch.is_on: switch_radiator_heating
+              - switch.is_on: switch_floor_heating
+          then:
+            - switch.turn_off: switch_floor_heating
+            - delay: 500ms
+            - switch.turn_on: switch_relay_2  # 3-way valve (on: water / off: radiator and floor)
+            - delay: 500ms
+            - switch.turn_off: switch_radiator_heating
+          else:
+            - switch.turn_on: switch_relay_2  # 3-way valve (on: water / off: radiator and floor)
+      - delay: 500ms
+      - switch.turn_on: switch_relay_1  # boiler (on / off)
+      - if:
+          condition:
+            - switch.is_on: switch_auto_mode_heating
+          then:
+            - script.execute: script_led_green
+          else:
+            - script.execute: script_led_magenta
+
+  - id: script_turn_off_water_tank_heating
+    then:
+      - if:
+          condition:
+            all:
+              - switch.is_off: switch_radiator_heating
+              - switch.is_off: switch_floor_heating
+          then:
+            - switch.turn_off: switch_relay_3 # floor heating water pump
+            - delay: 500ms
+            - switch.turn_off: switch_relay_1  # boiler (on / off)
+            - delay: 500ms
+            - switch.turn_off: switch_relay_2  # 3-way valve (on: water / off: radiator and floor)
+
+  - id: script_turn_on_radiator_heating
+    then:
+      - if:
+          condition:
+            - switch.is_off: switch_water_tank_heating
+          then:
+            - switch.turn_on: switch_relay_1  # boiler (on / off)
+            - if:
+                condition:
+                  - switch.is_on: switch_auto_mode_heating
+                then:
+                    - script.execute: script_led_radiator_auto_on_strobe
+                else:
+                    - script.execute: script_led_radiator_auto_off_strobe
+          else:
+            - delay: 400ms
+            - switch.turn_off: switch_radiator_heating
+
+  - id: script_turn_off_radiator_heating
+    then:
+      - if:
+          condition:
+              - switch.is_off: switch_relay_2  # 3-way valve (on: water / off: radiator and floor)
+          then:
+            - switch.turn_off: switch_floor_heating
+            - delay: 500ms
+            - switch.turn_off: switch_relay_1  # boiler (on / off)
+            - if:
+                condition:
+                  - switch.is_on: switch_auto_mode_heating
+                then:
+                  - script.execute: script_led_green
+                else:
+                  - script.execute: script_led_magenta
+
+  - id: script_turn_on_floor_heating
+    then:
+      - if:
+          condition:
+            all:
+              - switch.is_on: switch_radiator_heating
+              - switch.is_off: switch_water_tank_heating
+          then:
+            - switch.turn_on: switch_relay_3 # floor heating water pump
+            - if:
+                condition:
+                  - switch.is_on: switch_auto_mode_heating
+                then:
+                    - script.execute: script_led_floor_auto_on_strobe
+                else:
+                    - script.execute: script_led_floor_auto_off_strobe
+      - if:
+          condition:
+            any:
+              - switch.is_off: switch_radiator_heating
+              - switch.is_on: switch_water_tank_heating
+          then:
+            - delay: 400ms
+            - switch.turn_off: switch_floor_heating
+
+  - id: script_turn_off_floor_heating
+    then:
+      - switch.turn_off: switch_relay_3  # floor heating water pump (on / off)
+      - if:
+          condition:
+            - switch.is_on: switch_radiator_heating
+          then:
+            - if:
+                condition:
+                  - switch.is_on: switch_auto_mode_heating
+                then:
+                    - script.execute: script_led_radiator_auto_on_strobe
+                else:
+                    - script.execute: script_led_radiator_auto_off_strobe
+
+  - id: script_time_failure_reboot
+    mode: restart
+    then:
+      - delay: 120s
+      - logger.log: "Rebooting noww."
+      - button.press: button_boiler_controller_restart
+
+text_sensor:
+  - platform: template
+    id: text_time_ha
+    name: "HA time"
+    lambda: |-
+      char str[17]; time_t currTime = id(time_ha).now().timestamp;
+      strftime(str, sizeof(str), "%Y-%m-%d %H:%M", localtime(&currTime));
+      return  { str };
+    update_interval: 30s
+
+  - platform: template
+    id: text_time_rtc
+    name: "RTC time"
+    lambda: |-
+      char str[17]; time_t currTime = id(time_rtc).now().timestamp;
+      strftime(str, sizeof(str), "%Y-%m-%d %H:%M", localtime(&currTime));
+      return  { str };
+    update_interval: 30s
+
+# globals:
+#   - id: water_tank_on_time_hour
+#     type: std::string
+#     initial_value: '*'
+#   - id: water_tank_on_time_minute
+#     type: std::string
+#     initial_value: '*'
+#   - id: water_tank_on_time_second
+#     type: std::string
+#     initial_value: '0'
+#   - id: water_tank_off_time_hour
+#     type: std::string
+#     initial_value: '*'
+#   - id: water_tank_off_time_minute
+#     type: std::string
+#     initial_value: '*'
+#   - id: water_tank_off_time_second
+#     type: std::string
+#     initial_value: '0'
+
+# Boiler(switch_relay_1)
+#         ├─ [on] hot water
+#         └─ [off]
+# 3-way valve(switch_relay_2)
+#         ├─ [on] water tank flow
+#         └─ [off] heating systems flow
+# Pump (switch_relay_3)
+#         ├─ [on] floor AND radiator heating
+#         └─ [off] radiator heating
