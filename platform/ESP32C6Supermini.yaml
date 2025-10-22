@@ -18,6 +18,7 @@ esphome:
             id: time_rtc
         - delay: 1s
         - lambda: |-
+            ESP_LOGI("MY_ON_BOOT", "Project Version: ${Proj_version}");
             auto rtc_now = id(time_rtc).now();
             auto ha_now = id(time_ha).now();
             if ((rtc_now.is_valid()) && (!ha_now.is_valid())) {

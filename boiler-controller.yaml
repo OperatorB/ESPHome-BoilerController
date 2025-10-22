@@ -1,14 +1,13 @@
 substitutions:
   Proj_name: "boiler-controller"
   Proj_friendly_name: "Boiler Controller"
-  Proj_version: "2025.10.0"
+  Proj_version: "2025.10.100"
   Proj_owner: "OperatorB"
   Proj_timezone: "Europe/Budapest"
   API_key: ""
   OTA_password: ""
   WiFi_password: ""
   
-# Water Tank Schedule
   water_tank_on_time_hour: "*"
   water_tank_on_time_minute: "*"
   water_tank_on_time_second: "0"
